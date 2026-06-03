@@ -317,6 +317,19 @@ hr{border:none;border-top:1px solid var(--outline-variant);margin:14px 0;}
         <button class="btn btn-ghost" onclick="cloudSignOut()">ออกจากระบบ</button>
       </div>
       <button class="btn btn-ghost" style="margin-top:8px" onclick="cloudPush(true)">⬆️ ซิงค์ขึ้นคลาวด์ตอนนี้</button>
+      <hr>
+      <div style="font-weight:700;margin-bottom:2px">แชร์ข้ามบัญชี (หลายคนเห็นข้อมูลเดียวกัน)</div>
+      <p class="muted" style="margin-top:2px">เจ้าของ: ใส่อีเมลคนที่จะแชร์ด้านล่าง แล้วส่ง Workspace ID ให้เขา · ผู้รับ: วาง Workspace ID ที่ช่อง "เข้าร่วม"</p>
+      <button class="btn btn-ghost" onclick="copyWsId()">📋 คัดลอก Workspace ID ของฉัน</button>
+      <label>อีเมลที่อนุญาตให้เข้าถึงข้อมูลของฉัน (คั่นด้วย , )</label>
+      <textarea id="wsEmails" rows="2" placeholder="เช่น somchai@gmail.com, somsri@gmail.com"></textarea>
+      <button class="btn btn-ghost" onclick="saveAllowedEmails()">บันทึกรายชื่อที่อนุญาต</button>
+      <label>เข้าร่วมพื้นที่ของคนอื่น (วาง Workspace ID ของเจ้าของ)</label>
+      <input id="wsJoin" placeholder="วาง Workspace ID">
+      <div class="row" style="margin-top:8px">
+        <button class="btn btn-ghost" onclick="joinWorkspace()">เข้าร่วม</button>
+        <button class="btn btn-ghost" onclick="leaveWorkspace()">กลับมาใช้ของฉัน</button>
+      </div>
     </div>
     <div class="card">
       <h2>สำรอง / กู้คืนข้อมูล</h2>
@@ -445,40 +458,73 @@ function initFirebase(){
     if(!FB.app){
       FB.app=firebase.initializeApp(cfg);FB.auth=firebase.auth();FB.db=firebase.firestore();
       FB.auth.onAuthStateChanged(u=>{FB.user=u;renderCloudStatus();if(u)cloudPull();});
+      FB.auth.getRedirectResult().catch(e=>{if(e&&e.code)alert('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||e.code)+'\n(ตรวจว่าเพิ่มโดเมน zerolee1612.github.io ใน Authorized domains แล้ว)');});
     }
     return true;
   }catch(e){console.warn('firebase init',e);return false;}
 }
 function cloudSignIn(){
-  if(!initFirebase()){alert('กรุณาวาง Firebase config และกดบันทึกก่อน');return;}
-  FB.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>alert('เข้าสู่ระบบไม่สำเร็จ: '+e.message));
+  if(typeof firebase==='undefined'){alert('โหลด Firebase ไม่สำเร็จ — ต้องต่อเน็ต และเปิดผ่านลิงก์ https');return;}
+  if(!initFirebase()){alert('กรุณาวาง Firebase config และกดบันทึก config ก่อน');return;}
+  const p=new firebase.auth.GoogleAuthProvider();
+  FB.auth.signInWithPopup(p).catch(e=>{
+    const c=e.code||'';
+    if(c.indexOf('popup')>=0||c.indexOf('operation-not-supported')>=0||c.indexOf('cancelled')>=0){
+      try{FB.auth.signInWithRedirect(p);}catch(e2){alert('เข้าสู่ระบบไม่สำเร็จ: '+e2.message);}
+    }else alert('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||c));
+  });
 }
 function cloudSignOut(){if(FB.auth)FB.auth.signOut();}
 function stripImages(db){const c=JSON.parse(JSON.stringify(db));(c.tenancies||[]).forEach(t=>{delete t.idCardImg;delete t.houseRegImg;});return c;}
+// ===== พื้นที่ข้อมูลร่วม (Workspace) =====
+function getWsId(){return localStorage.getItem('wsId')||'';}
+function effectiveWs(){return getWsId()||(FB.user&&FB.user.uid)||'';}
+function wsRef(){return FB.db.collection('workspaces').doc(effectiveWs());}
 function cloudPull(){
   if(!FB.user)return;
-  FB.db.collection('rentalApp').doc(FB.user.uid).get().then(snap=>{
+  wsRef().get().then(snap=>{
     if(snap.exists){
-      let cloud;try{cloud=JSON.parse(snap.data().data);}catch(e){return;}
+      const dd=snap.data();
+      const we=document.getElementById('wsEmails');if(we)we.value=(dd.allowedEmails||[]).join(', ');
+      let cloud;try{cloud=JSON.parse(dd.data);}catch(e){renderCloudStatus();return;}
       const imgs={};(DB.tenancies||[]).forEach(t=>{imgs[t.id]={i:t.idCardImg,h:t.houseRegImg};});
       (cloud.tenancies||[]).forEach(t=>{const li=imgs[t.id];if(li){t.idCardImg=li.i||'';t.houseRegImg=li.h||'';}});
       _pulling=true;DB=cloud;migrate();_pulling=false;
       applyTheme();renderHome();renderCloudStatus();
     }else{cloudPush(true);}
-  }).catch(e=>{console.warn('pull',e);});
+  }).catch(e=>{console.warn('pull',e);renderCloudStatus();});
 }
 function cloudPush(immediate){
   if(!FB.user)return;
   clearTimeout(FB.timer);
-  const go=()=>{FB.db.collection('rentalApp').doc(FB.user.uid).set({data:JSON.stringify(stripImages(DB)),updatedAt:Date.now()}).then(renderCloudStatus).catch(e=>console.warn('push',e));};
+  const go=()=>{wsRef().set({data:JSON.stringify(stripImages(DB)),updatedAt:Date.now()},{merge:true}).then(renderCloudStatus).catch(e=>console.warn('push',e));};
   if(immediate)go();else FB.timer=setTimeout(go,1500);
 }
+function copyWsId(){if(!FB.user){alert('เข้าสู่ระบบก่อน');return;}const id=FB.user.uid;if(navigator.clipboard)navigator.clipboard.writeText(id);alert('คัดลอก Workspace ID ของคุณแล้ว:\n'+id+'\n\nส่งให้คนที่จะแชร์ด้วย');}
+function saveAllowedEmails(){
+  if(!FB.user){alert('เข้าสู่ระบบก่อน');return;}
+  if(getWsId()&&getWsId()!==FB.user.uid){alert('แก้รายชื่อได้เฉพาะเจ้าของพื้นที่ — กด "กลับมาใช้ของฉัน" ก่อน');return;}
+  const list=(document.getElementById('wsEmails').value||'').split(/[,\s]+/).map(s=>s.trim().toLowerCase()).filter(Boolean);
+  FB.db.collection('workspaces').doc(FB.user.uid).set({allowedEmails:list,owner:FB.user.uid},{merge:true})
+    .then(()=>alert('บันทึกรายชื่อที่อนุญาตแล้ว ('+list.length+' อีเมล)')).catch(e=>alert('บันทึกไม่สำเร็จ: '+e.message));
+}
+function joinWorkspace(){
+  const id=(document.getElementById('wsJoin').value||'').trim();
+  if(!id){alert('วาง Workspace ID ของเจ้าของก่อน');return;}
+  localStorage.setItem('wsId',id);renderCloudStatus();cloudPull();
+  alert('เข้าร่วมพื้นที่แล้ว กำลังดึงข้อมูล');
+}
+function leaveWorkspace(){localStorage.removeItem('wsId');renderCloudStatus();cloudPull();alert('กลับมาใช้พื้นที่ของคุณเองแล้ว');}
 function renderCloudStatus(){
   const el=document.getElementById('cloudStatus');if(!el)return;
   const cfg=getFbConfig();
   if(!cfg){el.innerHTML='สถานะ: ยังไม่ได้ตั้งค่า Firebase';return;}
-  if(FB.user)el.innerHTML='✅ เข้าสู่ระบบ: <b>'+(FB.user.email||FB.user.uid)+'</b><br>ข้อมูลซิงค์ขึ้นคลาวด์อัตโนมัติ';
-  else el.innerHTML='ตั้งค่า config แล้ว — ยังไม่ได้เข้าสู่ระบบ กด "เข้าสู่ระบบ Google"';
+  if(FB.user){
+    const joined=getWsId()&&getWsId()!==FB.user.uid;
+    el.innerHTML='✅ เข้าสู่ระบบ: <b>'+(FB.user.email||FB.user.uid)+'</b>'
+      +'<br><span style="font-size:11px">Workspace ID ของคุณ: '+FB.user.uid+'</span>'
+      +(joined?'<br><b style="color:var(--primary)">กำลังใช้พื้นที่ร่วม</b>':'<br>ใช้พื้นที่ของตัวเอง · ซิงค์อัตโนมัติ');
+  }else el.innerHTML='ตั้งค่า config แล้ว — ยังไม่ได้เข้าสู่ระบบ กด "เข้าสู่ระบบ Google"';
 }
 function parseConfig(t){
   // รับได้ทั้ง JSON และ object literal ของ JS (เช่นที่คัดลอกจาก Firebase console)
