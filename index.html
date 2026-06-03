@@ -307,11 +307,8 @@ hr{border:none;border-top:1px solid var(--outline-variant);margin:14px 0;}
     </div>
     <div class="card">
       <h2>☁️ ซิงค์ข้อมูลขึ้นคลาวด์ (Firebase)</h2>
-      <p class="muted">เปิดใช้เพื่อเก็บข้อมูลบนคลาวด์ เปิดได้หลายเครื่องด้วยข้อมูลเดียวกัน (ดูวิธีตั้งค่า Firebase ที่ผมส่งให้ในแชต)</p>
+      <p class="muted">ตั้งค่าไว้ให้แล้ว — แค่กด "เข้าสู่ระบบ Google" ก็เริ่มซิงค์ได้เลย เปิดเครื่องไหนก็ล็อกอินบัญชีเดิม ข้อมูลตรงกัน</p>
       <div id="cloudStatus" class="calc-box" style="margin-bottom:10px"></div>
-      <label>Firebase config (วาง JSON จากหน้า Project settings)</label>
-      <textarea id="fbConfig" rows="6" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "...", "appId": "..." }'></textarea>
-      <button class="btn" onclick="saveFbConfig()">บันทึก config</button>
       <div class="row" style="margin-top:8px">
         <button class="btn btn-ghost" onclick="cloudSignIn()">เข้าสู่ระบบ Google</button>
         <button class="btn btn-ghost" onclick="cloudSignOut()">ออกจากระบบ</button>
@@ -450,7 +447,8 @@ function accentColor(){return (THEME_COLORS[DB.settings.themeColor]||THEME_COLOR
 // ===== ซิงค์คลาวด์ Firebase =====
 let FB={app:null,auth:null,db:null,user:null,timer:null};
 let _pulling=false;
-function getFbConfig(){try{return JSON.parse(localStorage.getItem('fbConfig')||'null');}catch(e){return null;}}
+const DEFAULT_FB_CONFIG={apiKey:"AIzaSyBs21tD3S7EpoaHmYhshs_wGSXplXYiDgU",authDomain:"baan-chao.firebaseapp.com",projectId:"baan-chao",storageBucket:"baan-chao.firebasestorage.app",messagingSenderId:"126747027816",appId:"1:126747027816:web:1a0363b1dc9ee914bc8edd",measurementId:"G-CMEETMT93H"};
+function getFbConfig(){try{const s=localStorage.getItem('fbConfig');if(s)return JSON.parse(s);}catch(e){}return DEFAULT_FB_CONFIG;}
 function initFirebase(){
   const cfg=getFbConfig();
   if(!cfg||typeof firebase==='undefined')return false;
